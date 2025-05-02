@@ -1,0 +1,50 @@
+.transactions {
+    border-top: 1px solid #eee;
+    padding-top: 20px;
+    margin-bottom: 80px; /* Space for fixed navbar */
+}
+
+.transaction-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.transaction-icon {
+    width: 40px;
+    height: 40px;
+    background-color: #f0f5ff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    color: #0070ba;
+    font-size: 1.1rem;
+}
+
+.transaction-details {
+    flex-grow: 1;
+}
+
+.transaction-name {
+    font-weight: 500;
+}
+
+.transaction-date {
+    font-size: 0.8rem;
+    color: #777;
+}
+
+.transaction-amount {
+    font-weight: 500;
+}
+
+.credit {
+    color: #28a745;
+}
+
+.debit {
+    color: #dc3545;
+}
