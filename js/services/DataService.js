@@ -1,91 +1,139 @@
 class DataService {
     constructor() {
-        // Initialize with mock data or load from local storage
+        this.firebaseService = window.firebaseService;
+        this.currentUser = null;
+        this.users = {};
+        this.transactions = [];
+        this.listeners = [];
+        
+        // Check if we're logged in and initialize data
         this.initializeData();
     }
 
-    initializeData() {
-        // Create users
-        this.users = {
-            'user123': new User('user123', 'John Doe', 500.00),
-            'user456': new User('user456', 'Jane Smith', 750.00),
-            'user789': new User('user789', 'Alex Johnson', 300.00)
-        };
-        
-        // Current user
-        this.currentUser = this.users['user123'];
-        
-        // Create initial transactions
-        this.transactions = [
-            new Transaction('tx001', 'user456', 'user123', 120.00, new Date('2025-04-25T10:23:15')),
-            new Transaction('tx002', 'user123', 'user789', 75.50, new Date('2025-04-23T16:42:30')),
-            new Transaction('tx003', 'user456', 'user123', 210.00, new Date('2025-04-20T09:15:45'))
-        ];
-        
-        // Set transaction types based on current user
-        this.transactions.forEach(tx => {
-            tx.type = tx.getTypeForUser(this.currentUser.id);
-        });
-        
-        // Try to load from localStorage if available
-        this.loadFromStorage();
-    }
-
-    loadFromStorage() {
+    async initializeData() {
         try {
-            // Load users
-            const savedUsers = localStorage.getItem('wallet_users');
-            if (savedUsers) {
-                const parsedUsers = JSON.parse(savedUsers);
-                // Convert to User objects
-                this.users = {};
-                for (const userId in parsedUsers) {
-                    const user = parsedUsers[userId];
-                    this.users[userId] = new User(user.id, user.name, user.balance);
+            // Wait for auth state to be determined
+            this.firebaseService.onAuthStateChanged(async (user) => {
+                if (user) {
+                    // Get current user data from Firestore
+                    const userData = await this.firebaseService.getUserData(user.uid);
+                    this.currentUser = new User(user.uid, userData.name, userData.balance);
+                    
+                    // Store user in users map
+                    this.users[user.uid] = this.currentUser;
+                    
+                    // Load transactions
+                    await this.loadTransactions();
+                    
+                    // Listen for new transactions
+                    this.listenForTransactions();
+                    
+                    // Dispatch event that data is ready
+                    document.dispatchEvent(new CustomEvent('dataReady'));
+                } else {
+                    // Not logged in, redirect to login page
+                    if (window.location.pathname !== '/login.html' && 
+                        window.location.pathname !== '/register.html') {
+                        window.location.href = 'login.html';
+                    }
                 }
-            }
-            
-            // Load current user
-            const savedCurrentUser = localStorage.getItem('wallet_currentUser');
-            if (savedCurrentUser) {
-                const currentUserId = JSON.parse(savedCurrentUser);
-                this.currentUser = this.users[currentUserId];
-            }
-            
-            // Load transactions
-            const savedTransactions = localStorage.getItem('wallet_transactions');
-            if (savedTransactions) {
-                const parsedTransactions = JSON.parse(savedTransactions);
-                // Convert to Transaction objects
-                this.transactions = parsedTransactions.map(tx => {
-                    const transaction = new Transaction(
-                        tx.id, 
-                        tx.from, 
-                        tx.to, 
-                        tx.amount, 
-                        new Date(tx.date)
-                    );
-                    transaction.type = transaction.getTypeForUser(this.currentUser.id);
-                    return transaction;
-                });
-            }
+            });
         } catch (error) {
-            console.error('Error loading data from localStorage:', error);
+            console.error('Error initializing data:', error);
         }
     }
 
-    saveToStorage() {
+    async loadTransactions() {
         try {
-            localStorage.setItem('wallet_users', JSON.stringify(this.users));
-            localStorage.setItem('wallet_currentUser', JSON.stringify(this.currentUser.id));
-            localStorage.setItem('wallet_transactions', JSON.stringify(this.transactions));
+            if (!this.currentUser) return;
+            
+            // Get transactions from Firebase
+            const transactions = await this.firebaseService.getUserTransactions(this.currentUser.id);
+            
+            // Convert to Transaction objects
+            this.transactions = transactions.map(tx => {
+                const transaction = new Transaction(
+                    tx.id,
+                    tx.from,
+                    tx.to,
+                    tx.amount,
+                    tx.date.toDate()
+                );
+                transaction.type = tx.type;
+                return transaction;
+            });
+            
+            return this.transactions;
         } catch (error) {
-            console.error('Error saving data to localStorage:', error);
+            console.error('Error loading transactions:', error);
+            return [];
         }
     }
 
-    getUser(userId) {
-        return this.users[userId];
+    listenForTransactions() {
+        if (!this.currentUser) return;
+        
+        this.firebaseService.listenForTransactions(this.currentUser.id, async (transaction) => {
+            // Update local user balance
+            if (transaction.from === this.currentUser.id) {
+                // Get fresh balance from Firebase
+                const userData = await this.firebaseService.getUserData(this.currentUser.id);
+                this.currentUser.balance = userData.balance;
+            } else if (transaction.to === this.currentUser.id) {
+                // Get fresh balance from Firebase
+                const userData = await this.firebaseService.getUserData(this.currentUser.id);
+                this.currentUser.balance = userData.balance;
+            }
+            
+            // Create Transaction object
+            const newTx = new Transaction(
+                transaction.id,
+                transaction.from,
+                transaction.to,
+                transaction.amount,
+                new Date(transaction.date)
+            );
+            
+            // Set type for current user's perspective
+            newTx.type = newTx.getTypeForUser(this.currentUser.id);
+            
+            // Add to transactions array (at the beginning)
+            this.transactions.unshift(newTx);
+            
+            // Notify listeners
+            this.notifyListeners('transaction', newTx);
+        });
+    }
+
+    addListener(event, callback) {
+        this.listeners.push({ event, callback });
+    }
+
+    notifyListeners(event, data) {
+        this.listeners
+            .filter(listener => listener.event === event)
+            .forEach(listener => listener.callback(data));
+    }
+
+    async getUser(userId) {
+        try {
+            // If we already have user in cache, return it
+            if (this.users[userId]) {
+                return this.users[userId];
+            }
+            
+            // Otherwise fetch from Firebase
+            const userData = await this.firebaseService.getUserData(userId);
+            const user = new User(userId, userData.name, userData.balance);
+            
+            // Cache for future use
+            this.users[userId] = user;
+            
+            return user;
+        } catch (error) {
+            console.error('Error getting user:', error);
+            return null;
+        }
     }
 
     getCurrentUser() {
@@ -107,42 +155,37 @@ class DataService {
         });
     }
 
-    createTransaction(fromUserId, toUserId, amount) {
-        // Validate amount
-        amount = parseFloat(amount);
-        if (isNaN(amount) || amount <= 0) {
-            throw new Error('Invalid amount');
+    async createTransaction(fromUserId, toUserId, amount) {
+        try {
+            // Validate amount
+            amount = parseFloat(amount);
+            if (isNaN(amount) || amount <= 0) {
+                throw new Error('Invalid amount');
+            }
+            
+            // Create transaction in Firebase
+            await this.firebaseService.createTransaction(fromUserId, toUserId, amount);
+            
+            // Update local user balance (Firebase listener will handle the transaction)
+            const userData = await this.firebaseService.getUserData(fromUserId);
+            if (this.users[fromUserId]) {
+                this.users[fromUserId].balance = userData.balance;
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('Error creating transaction:', error);
+            throw error;
         }
-        
-        // Get users
-        const sender = this.getUser(fromUserId);
-        const recipient = this.getUser(toUserId);
-        
-        if (!sender || !recipient) {
-            throw new Error('User not found');
+    }
+
+    async logout() {
+        try {
+            await this.firebaseService.logoutUser();
+            // Redirect to login happens automatically via auth state change
+        } catch (error) {
+            console.error('Error logging out:', error);
+            throw error;
         }
-        
-        // Process transaction
-        sender.debit(amount);
-        recipient.credit(amount);
-        
-        // Create transaction record
-        const transaction = new Transaction(
-            Transaction.generateId(),
-            fromUserId,
-            toUserId,
-            amount
-        );
-        
-        // Set type for current user's perspective
-        transaction.type = transaction.getTypeForUser(this.currentUser.id);
-        
-        // Add to transactions
-        this.transactions.unshift(transaction);
-        
-        // Save to storage
-        this.saveToStorage();
-        
-        return transaction;
     }
 }
