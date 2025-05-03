@@ -13,12 +13,13 @@
     <div class="container">
         <div class="header">
             <h1>PayWallet</h1>
+            <a href="#" class="logout-btn" style="position: absolute; top: 20px; right: 20px; color: #0070ba; text-decoration: none; font-size: 0.9rem;">Logout</a>
         </div>
         
         <div class="balance-card">
             <div class="balance-label">Your Balance</div>
-            <div class="balance-amount" id="userBalance">$500.00</div>
-            <div class="username" id="userName">John Doe</div>
+            <div class="balance-amount" id="userBalance">$0.00</div>
+            <div class="username" id="userName">Loading...</div>
         </div>
         
         <div class="action-buttons">
@@ -44,6 +45,7 @@
             <h2 class="section-title">Recent Transactions</h2>
             <div id="transactionsList">
                 <!-- Transactions will be loaded dynamically -->
+                <div class="transaction-placeholder">Loading transactions...</div>
             </div>
         </div>
     </div>
@@ -125,8 +127,15 @@
         Transaction successful!
     </div>
 
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+    
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="js/services/FirebaseService.js"></script>
     <script src="js/models/User.js"></script>
     <script src="js/models/Transaction.js"></script>
     <script src="js/services/DataService.js"></script>
